@@ -1,0 +1,23 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+.aws/
+*.pem
+*.key
+
+# Local tools and editor state
+.tools/
+.codex/
+.vs/
+.idea/
+*.log
+Thumbs.db
+.DS_Store
+
+# Generated files
+__pycache__/
+*.py[cod]
+node_modules/
+bin/
+obj/
