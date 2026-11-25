@@ -21,3 +21,6 @@ __pycache__/
 node_modules/
 bin/
 obj/
+
+# Disposable prototype archived on prototype/process-panel-interaction
+cases/process-panel/process-panel.prototype.html
