@@ -49,7 +49,8 @@ async function stopPanel(mode = 'crash', expectedCode = mode === 'stop' ? 0 : un
   if (panel && panel.exitCode === null && panel.signalCode === null) {
     const exited = once(panel, 'exit'); panel.stdin.end(`${mode}\n`);
     const [code] = await exited;
-    if (expectedCode !== undefined) expect(code, panelOutput).toBe(expectedCode);
+    if (Array.isArray(expectedCode)) expect(expectedCode, panelOutput).toContain(code);
+    else if (expectedCode !== undefined) expect(code, panelOutput).toBe(expectedCode);
   }
 }
 test.beforeEach(async ({ page }) => {
@@ -487,8 +488,17 @@ test('настоящий npm start собирает Panel и позволяет 
   await project.getByRole('button', { name: 'Запустить', exact: true }).click();
   await expect(project.getByLabel('Вывод программы')).toContainText('сервер готов');
   const pids = [...(await project.getByLabel('Вывод программы').innerText()).matchAll(/PID=(\d+)/g)].map(m => Number(m[1]));
-  await stopPanel('stop');
+  expect(pids).toHaveLength(2);
+  for (const pid of pids) expect(alive(pid)).toBe(true);
+  // npm forwards Ctrl+C to its cmd.exe wrapper on Windows. The controller can
+  // report 1 for that interrupted wrapper even when Go completes cleanup normally.
+  // Only this npm scenario permits that code; direct-server shutdown stays strict.
+  await stopPanel('stop', [0, 1]);
+  // This message is emitted by Go only after confirmed Project and HTTP shutdown.
+  // It prevents the controller's backup job from passing a forced-cleanup failure.
   expect(panelOutput).toContain('Панель остановлена.');
+  expect(panelOutput).not.toContain('Panel shutdown timed out');
+  await expect.poll(() => responds(4000)).toBe(false);
   await expect.poll(() => responds(port)).toBe(false);
   for (const pid of pids) await expect.poll(() => alive(pid)).toBe(false);
 });
