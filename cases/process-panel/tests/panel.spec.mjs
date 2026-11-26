@@ -97,8 +97,9 @@ test('регистрация, реальные потомки, вывод, по�
   await page.reload(); await expect(project.getByRole('status')).toHaveText('Остановлен');
   await expect(project.getByLabel('Вывод программы')).toHaveText(output);
   await project.getByRole('button', { name: 'Запустить', exact: true }).click();
-  await expect(project.getByLabel('Вывод программы')).toContainText('сервер готов');
   for (const pid of pids) await expect(project.getByLabel('Вывод программы')).not.toContainText(`PID=${pid}`);
+  await expect(project.getByLabel('Вывод программы')).toContainText('сервер готов');
+  await expect.poll(() => responds(port)).toBe(true);
   await project.getByRole('button', { name: 'Остановить', exact: true }).click();
   await expect(project.getByRole('status')).toHaveText('Остановлен');
 });
@@ -238,9 +239,10 @@ test('два Project работают независимо; интерфейс �
   await expect(b.getByLabel('Вывод программы')).toHaveText(bOutput);
   await expect(a.getByLabel('Вывод программы')).toHaveText(aOutput);
   await a.getByRole('button', { name: 'Запустить', exact: true }).click();
-  await expect(a.getByLabel('Вывод программы')).toContainText('сервер готов');
+  // The previous run's output is retained until the next server snapshot arrives.
   for (const match of aOutput.matchAll(/PID=(\d+)/g)) await expect(a.getByLabel('Вывод программы')).not.toContainText(`PID=${match[1]}`);
-  expect(await responds(portA)).toBe(true); expect(await responds(portB)).toBe(true);
+  await expect(a.getByLabel('Вывод программы')).toContainText('сервер готов');
+  await expect.poll(() => responds(portA)).toBe(true); expect(await responds(portB)).toBe(true);
   for (const project of [a, b]) {
     await project.getByRole('button', { name: 'Остановить', exact: true }).click();
     await expect(project.getByRole('status')).toHaveText('Остановлен');
@@ -477,6 +479,54 @@ test('занятый адрес Panel сохраняет чужой контро
     }
   } finally { await terminateOwned(control); }
 });
+
+for (const action of ['start', 'stop']) {
+  test(`потеря связи перед ${action} сохраняет подтверждённые состояние и вывод`, async ({ page, request }) => {
+    const port = await unusedPort();
+    const project = await add(page, { cmd: command(port) });
+    await project.getByRole('button', { name: 'Запустить', exact: true }).click();
+    await expect(project.getByLabel('Вывод программы')).toContainText('сервер готов');
+    if (action === 'start') {
+      await project.getByRole('button', { name: 'Остановить', exact: true }).click();
+      await expect(project.getByRole('status')).toHaveText('Остановлен');
+    }
+    const confirmedState = action === 'start' ? 'Остановлен' : 'Работает';
+    const confirmedOutput = await project.getByLabel('Вывод программы').innerText();
+    let releasePolling;
+    const pollingGate = new Promise(resolve => { releasePolling = resolve; });
+    let markPollingIntercepted;
+    const pollingIntercepted = new Promise(resolve => { markPollingIntercepted = resolve; });
+    await page.route('**/api/projects', async route => {
+      if (route.request().method() !== 'GET') return route.continue();
+      markPollingIntercepted();
+      await pollingGate;
+      await route.abort('connectionfailed');
+    });
+    await page.route(`**/api/projects/*/${action}`, route => route.abort('connectionfailed'));
+    try {
+      // Fail the action before the held background poll can report disconnection.
+      await pollingIntercepted;
+      await project.getByRole('button', { name: action === 'start' ? 'Запустить' : 'Остановить', exact: true }).click();
+      await expect(page.getByRole('alert').filter({ hasText: 'Связь с панелью потеряна' }).first()).toBeVisible();
+      releasePolling();
+      await expect(project.getByRole('status')).toHaveText(confirmedState);
+      await expect(project.getByLabel('Вывод программы')).toHaveText(confirmedOutput);
+      await expect(project.getByRole('button', { name: 'Запустить', exact: true })).toBeDisabled();
+      await expect(project.getByRole('button', { name: 'Остановить', exact: true })).toBeDisabled();
+      const [serverProject] = await (await request.get('/api/projects')).json();
+      expect(serverProject.state).toBe(action === 'start' ? 'stopped' : 'running');
+      expect(serverProject.output.replace(/\r\n/g, '\n')).toBe(confirmedOutput.replace(/\r\n/g, '\n'));
+      expect(await responds(port)).toBe(action === 'stop');
+    } finally {
+      releasePolling();
+      await page.unrouteAll({ behavior: 'wait' });
+    }
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(project.getByRole('status')).toHaveText(confirmedState);
+    await expect(project.getByLabel('Вывод программы')).toHaveText(confirmedOutput);
+    await expect(project.getByRole('button', { name: action === 'start' ? 'Запустить' : 'Остановить', exact: true })).toBeEnabled();
+  });
+}
 
 test('настоящий npm start собирает Panel и позволяет Go-серверу штатно завершиться по Ctrl+C', async ({ page }) => {
   await stopPanel('stop');

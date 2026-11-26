@@ -6,12 +6,13 @@ type State = 'stopped' | 'starting' | 'running' | 'stopping' | 'error';
 type Project = { id: string; name: string; folder: string; command: string; state: State; output: string; error: string; active: boolean };
 const labels: Record<State, string> = { stopped: 'Остановлен', starting: 'Запускается', running: 'Работает', stopping: 'Останавливается', error: 'Ошибка' };
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+class PanelConnectionError extends Error {}
 async function request<T>(url: string, data?: unknown, method = data === undefined ? 'GET' : 'POST'): Promise<T> {
   let response: Response;
   try {
     response = await fetch(url, { method, signal: AbortSignal.timeout(5000), ...(data === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) });
   } catch {
-    throw new Error('Связь с панелью потеряна. Показано последнее известное состояние; запустите панель в терминале.');
+    throw new PanelConnectionError('Связь с панелью потеряна. Показано последнее известное состояние; запустите панель в терминале.');
   }
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'Не удалось выполнить запрос');
@@ -44,9 +45,13 @@ function App() {
   }
   async function act(project: Project, action: 'start' | 'stop') {
     setError('');
-    setProjects(items => items.map(p => p.id === project.id ? { ...p, state: action === 'start' ? 'starting' : 'stopping', ...(action === 'start' ? { output: '', error: '' } : {}) } : p));
+    // Polling owns lifecycle state and output; a pending request is not confirmation.
+    setBusy(true);
     try { await request(`/api/projects/${project.id}/${action}`, {}); }
-    catch (e) { setError(errorMessage(e)); }
+    catch (e) {
+      if (e instanceof PanelConnectionError) setConnectionError(e.message);
+      else setError(errorMessage(e));
+    } finally { setBusy(false); }
   }
   async function save(event: React.FormEvent<HTMLFormElement>, project: Project) {
     event.preventDefault();
