@@ -104,6 +104,59 @@ test('регистрация, реальные потомки, вывод, по�
   await expect(project.getByRole('status')).toHaveText('Остановлен');
 });
 
+test('копирование всего вывода выбранного Project при работе и после остановки', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await writeFile(join(scratch, 'output.mjs'), "process.stdout.write('Первая строка\\n\\n  строка с пробелами  \\n'); process.stderr.write('Ошибка stderr\\n'); setInterval(() => {}, 1000);");
+  const project = await add(page, { folder: scratch, cmd: `${shellQuote(process.execPath)} output.mjs` });
+  const copy = project.getByRole('button', { name: 'Копировать вывод', exact: true });
+  await expect(copy).toBeDisabled();
+  const other = await add(page, { name: 'Другой проект', cmd: 'echo other output' });
+  await other.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await expect(other.getByLabel('Вывод программы')).toContainText('other output');
+  await project.getByRole('button', { name: 'Запустить', exact: true }).click();
+  const output = project.getByLabel('Вывод программы');
+  await expect(output).toContainText('Ошибка stderr');
+  await expect(project.getByRole('status')).toHaveText('Работает');
+  const expected = await output.textContent();
+  expect(expected).toContain('\n\n  строка с пробелами  \n');
+  const checkCopy = async () => {
+    await copy.click();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    // Windows clipboard may represent line endings as CRLF.
+    expect(copied.replace(/\r\n/g, '\n')).toBe(expected.replace(/\r\n/g, '\n'));
+  };
+  await checkCopy();
+  await project.getByRole('button', { name: 'Остановить', exact: true }).click();
+  await expect(project.getByRole('status')).toHaveText('Остановлен');
+  await checkCopy();
+  await page.reload();
+  await checkCopy();
+  await writeFile(join(scratch, 'output.mjs'), '');
+  await project.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await expect(output).toHaveText('Вывод появится после запуска.');
+  await expect(copy).toBeDisabled();
+});
+
+test('отказ буфера обмена показывает ошибку и позволяет повторить копирование', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const project = await add(page, { cmd: 'echo diagnostics' });
+  await project.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await expect(project.getByRole('status')).toHaveText('Остановлен');
+  await page.evaluate(() => {
+    const original = navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText = async text => {
+      navigator.clipboard.writeText = original;
+      throw new DOMException('Clipboard denied', 'NotAllowedError');
+    };
+  });
+  const copy = project.getByRole('button', { name: 'Копировать вывод', exact: true });
+  await copy.click();
+  await expect(project.getByRole('alert')).toContainText('Не удалось скопировать вывод');
+  await copy.click();
+  await expect(project.getByRole('alert')).toHaveCount(0);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('diagnostics');
+});
+
 test('одновременные запросы запуска создают одно дерево; авария Panel его завершает', async ({ page, request }) => {
   const port = await unusedPort();
   const project = await add(page, { cmd: command(port) });
