@@ -18,6 +18,21 @@ async function request<T>(url: string, data?: unknown, method = data === undefin
   if (!response.ok) throw new Error(result.error || 'Не удалось выполнить запрос');
   return result;
 }
+function CopyOutput({ output }: { output: string }) {
+  const [error, setError] = useState('');
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(output);
+      setError('');
+    } catch {
+      setError('Не удалось скопировать вывод. Проверьте разрешение браузера на доступ к буферу обмена и повторите попытку.');
+    }
+  }
+  return <>
+    <button type="button" className="secondary" disabled={!output} onClick={() => void copy()}>Копировать вывод</button>
+    {error && <p role="alert" className="error">{error}</p>}
+  </>;
+}
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState('');
@@ -103,7 +118,8 @@ function App() {
           {!modifiable(project) && <p className="hint">Сначала остановите проект, чтобы сохранить изменения.</p>}
         </form>}
         {project.error && <p role="alert" className="error">{project.error}</p>}
-        <h3>Вывод последнего запуска</h3><pre aria-label="Вывод программы">{project.output || 'Вывод появится после запуска.'}</pre>
+        <h3>Вывод последнего запуска</h3><CopyOutput output={project.output} />
+        <pre aria-label="Вывод программы">{project.output || 'Вывод появится после запуска.'}</pre>
       </article>)}
     </div>
   </main>;
