@@ -20,13 +20,14 @@ import (
 
 type Project struct {
 	storage.Registration
-	State        string `json:"state"`
-	Output       string `json:"output"`
-	Error        string `json:"error"`
-	Active       bool   `json:"active"`
-	run          *process.Run
-	readerDone   chan struct{}
-	stopDeadline time.Time
+	State         string `json:"state"`
+	Output        string `json:"output"`
+	Error         string `json:"error"`
+	Active        bool   `json:"active"`
+	run           *process.Run
+	readerDone    chan struct{}
+	stopDeadline  time.Time
+	stopRequested bool
 }
 type Registry struct {
 	mu       sync.Mutex
@@ -236,6 +237,7 @@ func (s *Registry) action(w http.ResponseWriter, r *http.Request) {
 		p.State = "starting"
 		p.Output = ""
 		p.Error = ""
+		p.stopRequested = false
 		// The transition is returned before launching; all repeated starts see 'starting'.
 		go s.launch(p)
 	} else {
@@ -247,15 +249,26 @@ func (s *Registry) action(w http.ResponseWriter, r *http.Request) {
 			fail(w, 409, "Остановка уже выполняется")
 			return
 		}
-		p.State = "stopping"
-		p.Error = ""
-		p.stopDeadline = time.Now().Add(5 * time.Second)
-		if err := p.run.Terminate(); err != nil {
-			p.State = "error"
-			p.Error = "Не удалось остановить проект: " + err.Error()
+		if err := s.beginStop(p); err != nil {
+			fail(w, 500, p.Error)
+			return
 		}
 	}
 	writeJSON(w, 202, p)
+}
+
+// A successful termination request is an intent, not proof that the job is empty.
+func (s *Registry) beginStop(p *Project) error {
+	p.State = "stopping"
+	p.Error = ""
+	p.stopDeadline = time.Now().Add(5 * time.Second)
+	if err := p.run.Terminate(); err != nil {
+		p.State = "error"
+		p.Error = "Не удалось остановить проект: " + err.Error()
+		return err
+	}
+	p.stopRequested = true
+	return nil
 }
 func (s *Registry) launch(p *Project) {
 	s.mu.Lock()
@@ -311,7 +324,7 @@ func (s *Registry) launch(p *Project) {
 		}
 		if !active {
 			code, exitErr := run.ExitCode()
-			stopping := p.State == "stopping"
+			stopping := p.stopRequested
 			s.mu.Unlock()
 			// Drain output before allowing the next run to replace it.
 			<-readerDone
@@ -320,6 +333,7 @@ func (s *Registry) launch(p *Project) {
 			p.run = nil
 			if stopping || code == 0 {
 				p.State = "stopped"
+				p.Error = ""
 			} else {
 				p.State = "error"
 				p.Error = fmt.Sprintf("Программа завершилась с кодом %d", code)
@@ -341,13 +355,12 @@ func (s *Registry) launch(p *Project) {
 }
 
 // Shutdown refuses new launches and terminates only owned jobs.
-func (s *Registry) Shutdown() {
+func (s *Registry) Shutdown() error {
 	s.mu.Lock()
 	s.closed = true
 	for _, p := range s.projects {
 		if p.run != nil {
-			p.State = "stopping"
-			p.run.Terminate()
+			s.beginStop(p)
 		}
 	}
 	s.mu.Unlock()
@@ -360,8 +373,24 @@ func (s *Registry) Shutdown() {
 		}
 		s.mu.Unlock()
 		if !active {
-			return
+			return nil
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var failures []string
+	for _, p := range s.projects {
+		if p.Active {
+			reason := p.Error
+			if reason == "" {
+				reason = "завершение процессов не подтверждено"
+			}
+			failures = append(failures, p.Name+": "+reason)
+		}
+	}
+	if len(failures) == 0 {
+		return nil
+	}
+	return fmt.Errorf("не удалось подтвердить остановку проектов: %s", strings.Join(failures, "; "))
 }

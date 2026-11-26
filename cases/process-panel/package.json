@@ -6,7 +6,7 @@
     "start": "node scripts/start.mjs",
     "build": "tsc --noEmit && vite build && go build -buildvcs=false -o bin/panel.exe ./cmd/panel",
     "typecheck": "tsc --noEmit",
-    "test:prepare": "go build -buildvcs=false -o bin/panel-test-controller.exe ./tests/console-controller",
+    "test:prepare": "go build -buildvcs=false -o bin/panel-test-controller.exe ./tests/console-controller && go build -buildvcs=false -tags panelfaults -o bin/panel-fault-test.exe ./cmd/panel",
     "test": "npm run build && npm run test:prepare && playwright test"
   },
   "dependencies": {

@@ -14,10 +14,10 @@ Windows process-tree termination, including an abnormal panel exit.
 
 ## Startup contract
 
-Implemented slices: issue #2 (start, output, stop) and issue #3 (persistent
-registrations, editing, removal, independent Projects). Remaining full lifecycle
-scenarios belong to issue #4. Read [README.md](README.md) for setup, data location,
-and verification.
+Implemented slices: issue #2 (start, output, stop), issue #3 (persistent
+registrations, editing, removal, independent Projects), and issue #4 (errors,
+reconnection, shutdown, crash recovery). Read [README.md](README.md) for setup,
+data location, scenario coverage, and verification limits.
 
 From `cases/process-panel/`, after the implementation's initial dependency setup:
 
@@ -43,8 +43,8 @@ specification or a ready-for-agent label is not that command.
 ## Process-control evidence
 
 Windows Job Objects were validated on this computer before process-control
-implementation. The disposable source and observed results are archived on local
-branch `prototype/process-panel-windows-job`, commit `9da8526`, under
+implementation. The disposable source and observed results are archived on
+branch `prototype/process-panel-windows-job` (also published to origin), commit `9da8526`, under
 `cases/process-panel/windows-job-probe/`. Read it with `git show` from that branch.
 The probe checked
 normal termination, controller crash, both descendant identities, stopped HTTP,
@@ -65,3 +65,24 @@ Browser tests use a test-only controller that creates a separate hidden console
 for its owned Panel. It sends Ctrl+C for a normal shutdown or kills that exact
 child for a crash. Test stores are isolated through PROCESS_PANEL_DATA_DIR under
 test-results; tests must not touch the user's default store.
+
+Direct Go-server crash checks intentionally have no enclosing controller cleanup
+job: they must observe the Panel's own job closure. Only the npm launcher test
+gets a controller-owned backup job for wrapper grandchildren. Preserve that
+distinction so the harness cannot mask a regression in production crash cleanup.
+
+## Lifecycle failures
+
+A termination request is not proof of exit. Retain ownership and block launch,
+edit, and removal until the job is confirmed empty. A failed stop remains
+retryable. Keep stop intent separately from the displayed state so delayed
+confirmation can finish a previously accepted stop after a timeout.
+
+Shutdown must report failures and return a nonzero exit status when cleanup
+cannot be confirmed. Browser connection loss must disable writes and identify
+the displayed state as the last known state. Reconnect by fetching server state.
+
+The `panelfaults` build tag belongs only to the separately named acceptance-test
+executable. It injects a single termination denial or an unconfirmed request
+while real owned processes keep running. Production builds have no fault marker
+or environment switch. Keep this distinction explicit in verification reports.

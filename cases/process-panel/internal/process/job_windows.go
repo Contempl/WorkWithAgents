@@ -158,6 +158,9 @@ func (r *Run) ExitCode() (uint32, error) {
 	return code, err
 }
 func (r *Run) Terminate() error {
+	if handled, err := terminationOverride(); handled {
+		return err
+	}
 	ok, _, e := terminateJob.Call(uintptr(r.job), 1)
 	if ok == 0 {
 		return apiError("TerminateJobObject", e)
