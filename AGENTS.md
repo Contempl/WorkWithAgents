@@ -6,6 +6,22 @@ each case's code, documentation, glossary, and decisions in its own folder.
 
 For the current case, follow the [Process Panel instructions](cases/process-panel/AGENTS.md).
 
+## Work routing
+
+The user chooses when to discuss, specify, or implement a task.
+Small changes: Issue -> implementation -> checks and review -> PR -> user acceptance -> merge.
+Unsettled behavior: discussion -> specification -> tickets -> the same delivery path.
+Before implementation or handing work to a new session, read
+[docs/agents/implementation.md](docs/agents/implementation.md).
+
+## Merge authority
+
+Merge only after the user personally posts approval of the current full PR head
+SHA in that PR and explicitly asks the agent to merge. Only the user authors
+merge-approval comments; agents must never write approval on the user's behalf.
+Any new commit requires fresh approval. Passing tests, agent reviews, and earlier
+approval of another commit do not authorize merging the current head.
+
 ## Writing language
 
 Write specifications, issue descriptions, pull requests, and user-facing reports

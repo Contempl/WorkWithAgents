@@ -3,6 +3,13 @@
 Track tasks and specifications in GitHub Issues for `Contempl/WorkWithAgents`.
 Use GitHub CLI (`gh`) from this repository.
 
+## Delivery
+
+Implementation closes Issues through approved PRs merged into `main`. Before
+implementing a ticket or specification, follow
+[implementation.md](implementation.md) for branches, review, PR creation, user
+acceptance, and post-merge closure. Keep Issues open while their PR is unmerged.
+
 ## Target repository
 
 Before the first issue write in a session, run
