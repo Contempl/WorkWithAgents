@@ -18,12 +18,22 @@ import (
 	"process-panel/internal/storage"
 )
 
+type ProjectState string
+
+const (
+	StateStopped  ProjectState = "stopped"
+	StateStarting ProjectState = "starting"
+	StateRunning  ProjectState = "running"
+	StateStopping ProjectState = "stopping"
+	StateError    ProjectState = "error"
+)
+
 type Project struct {
 	storage.Registration
-	State         string `json:"state"`
-	Output        string `json:"output"`
-	Error         string `json:"error"`
-	Active        bool   `json:"active"`
+	State         ProjectState `json:"state"`
+	Output        string       `json:"output"`
+	Error         string       `json:"error"`
+	Active        bool         `json:"active"`
 	run           *process.Run
 	readerDone    chan struct{}
 	stopDeadline  time.Time
@@ -43,7 +53,7 @@ func Open(path string) (*Registry, error) {
 		return nil, err
 	}
 	for _, registration := range registrations {
-		s.projects = append(s.projects, &Project{Registration: registration, State: "stopped"})
+		s.projects = append(s.projects, &Project{Registration: registration, State: StateStopped})
 	}
 	return s, nil
 }
@@ -156,7 +166,7 @@ func (s *Registry) collection(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, "Не удалось сохранить проект: "+err.Error())
 			return
 		}
-		p := &Project{Registration: registration, State: "stopped"}
+		p := &Project{Registration: registration, State: StateStopped}
 		s.projects = append(s.projects, p)
 		writeJSON(w, 201, p)
 	default:
@@ -198,7 +208,7 @@ func (s *Registry) action(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if registrationAction {
-		if p.Active || p.run != nil || p.State == "starting" || p.State == "stopping" {
+		if p.Active || p.run != nil || p.State == StateStarting || p.State == StateStopping {
 			fail(w, 409, "Сначала остановите проект")
 			return
 		}
@@ -230,11 +240,11 @@ func (s *Registry) action(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if parts[1] == "start" {
-		if p.Active || p.State == "starting" || p.State == "stopping" {
+		if p.Active || p.State == StateStarting || p.State == StateStopping {
 			fail(w, 409, "Проект уже запущен или меняет состояние")
 			return
 		}
-		p.State = "starting"
+		p.State = StateStarting
 		p.Output = ""
 		p.Error = ""
 		p.stopRequested = false
@@ -245,7 +255,7 @@ func (s *Registry) action(w http.ResponseWriter, r *http.Request) {
 			fail(w, 409, "У проекта нет активного запуска")
 			return
 		}
-		if p.State == "stopping" {
+		if p.State == StateStopping {
 			fail(w, 409, "Остановка уже выполняется")
 			return
 		}
@@ -259,11 +269,11 @@ func (s *Registry) action(w http.ResponseWriter, r *http.Request) {
 
 // A successful termination request is an intent, not proof that the job is empty.
 func (s *Registry) beginStop(p *Project) error {
-	p.State = "stopping"
+	p.State = StateStopping
 	p.Error = ""
 	p.stopDeadline = time.Now().Add(5 * time.Second)
 	if err := p.run.Terminate(); err != nil {
-		p.State = "error"
+		p.State = StateError
 		p.Error = "Не удалось остановить проект: " + err.Error()
 		return err
 	}
@@ -273,20 +283,20 @@ func (s *Registry) beginStop(p *Project) error {
 func (s *Registry) launch(p *Project) {
 	s.mu.Lock()
 	if s.closed {
-		p.State = "stopped"
+		p.State = StateStopped
 		s.mu.Unlock()
 		return
 	}
 	run, err := process.Launch(p.Folder, p.Command)
 	if err != nil {
-		p.State = "error"
+		p.State = StateError
 		p.Error = "Не удалось запустить проект: " + err.Error()
 		s.mu.Unlock()
 		return
 	}
 	p.run = run
 	p.Active = true
-	p.State = "running"
+	p.State = StateRunning
 	p.readerDone = make(chan struct{})
 	readerDone := p.readerDone
 	s.mu.Unlock()
@@ -317,7 +327,7 @@ func (s *Registry) launch(p *Project) {
 		s.mu.Lock()
 		active, queryErr := run.Active()
 		if queryErr != nil {
-			p.State = "error"
+			p.State = StateError
 			p.Error = "Не удалось проверить процессы: " + queryErr.Error()
 			s.mu.Unlock()
 			continue
@@ -332,22 +342,22 @@ func (s *Registry) launch(p *Project) {
 			p.Active = false
 			p.run = nil
 			if stopping || code == 0 {
-				p.State = "stopped"
+				p.State = StateStopped
 				p.Error = ""
 			} else {
-				p.State = "error"
+				p.State = StateError
 				p.Error = fmt.Sprintf("Программа завершилась с кодом %d", code)
 			}
 			if exitErr != nil {
-				p.State = "error"
+				p.State = StateError
 				p.Error = exitErr.Error()
 			}
 			run.Close()
 			s.mu.Unlock()
 			return
 		}
-		if p.State == "stopping" && time.Now().After(p.stopDeadline) {
-			p.State = "error"
+		if p.State == StateStopping && time.Now().After(p.stopDeadline) {
+			p.State = StateError
 			p.Error = "За 5 секунд завершение процессов не подтверждено. Повторите остановку."
 		}
 		s.mu.Unlock()
