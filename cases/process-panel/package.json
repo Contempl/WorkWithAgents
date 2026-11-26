@@ -1,0 +1,22 @@
+{
+  "name": "process-panel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "build": "tsc --noEmit && vite build && go build -buildvcs=false -o bin/panel.exe ./cmd/panel",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && playwright test"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0"
+  }
+}
