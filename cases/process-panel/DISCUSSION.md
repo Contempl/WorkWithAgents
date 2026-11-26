@@ -1,7 +1,7 @@
 # Process Panel: design discussion
 
 Status: initial scope accepted after reviewing an interactive walkthrough.
-This is the handoff from product discovery to stack selection and specification.
+This records the product discovery outcome for the specification step.
 
 ## Purpose
 
@@ -46,13 +46,13 @@ Terminology is defined in [GLOSSARY.md](GLOSSARY.md).
   registrations and require an explicit user action to start each project again.
   Crash cleanup remains subject to the technical validation below.
 
-## Technical validation before stack selection
+## Technical validation before process-control implementation
 
 Use a disposable prototype on the user's Windows computer to verify that a
-candidate stack can stop a launched program and its descendants, including when
+chosen stack can stop a launched program and its descendants, including when
 the panel exits abnormally. Include an unrelated process to verify the ownership
 boundary. This is a requirement to validate, not a capability already demonstrated.
-Record the observed result before committing to a stack or promising crash cleanup.
+Record the observed result before implementing or promising crash cleanup.
 
 ## Interaction prototype
 
@@ -66,11 +66,16 @@ workflow, not operating-system process control. Its source is preserved on the
 [prototype/process-panel-interaction branch](https://github.com/Contempl/WorkWithAgents/tree/prototype/process-panel-interaction/cases/process-panel).
 Open `process-panel.prototype.html` from that branch directly in a browser.
 
+## Stack and startup
+
+The selected stack and rejected alternatives are recorded in
+[ADR-0002](docs/adr/0002-go-server-and-typescript-interface.md). The agreed startup
+command and address are in [AGENTS.md](AGENTS.md). These are design agreements;
+the application has not been implemented.
+
 ## Next steps
 
-Compare two or three technology stacks against these requirements and
-the user's ability to understand and maintain the code. Validate the process
-lifecycle requirement above before settling a stack. Record the stack choice and
-rejected alternatives in a separate ADR. Once chosen, document the startup command
-and local URL in a case-level AGENTS.md, linked from the root AGENTS.md.
-No stack, startup command, or listening port has been selected yet.
+Write and agree on the implementation specification. Use the technical prototype
+described above to resolve process-lifecycle uncertainty before implementing that
+part of the panel. Preserve the validated product scope and revisit decisions
+explicitly if new evidence requires changes.

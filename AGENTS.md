@@ -4,7 +4,7 @@ This repository is a shared harness for projects. The root holds reusable skills
 settings, and development workflow rules. `cases/` holds independent cases; keep
 each case's code, documentation, glossary, and decisions in its own folder.
 
-The current case is [Process Panel](cases/process-panel/).
+For the current case, follow the [Process Panel instructions](cases/process-panel/AGENTS.md).
 Write agent-facing documentation in English.
 
 ## Agent skills
