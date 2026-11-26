@@ -31,3 +31,10 @@ which serves both the interface and API at that address. Bind to IPv4 loopback
 only. If the port is occupied, report the error and leave the existing process
 running. Use this document as the authoritative source for the launch command
 and address.
+
+## Implementation handoff
+
+Before implementation, read [specification issue #1](https://github.com/Contempl/WorkWithAgents/issues/1)
+and the selected ticket, including comments and blocking relationships.
+Begin application implementation only on an explicit user command; a published
+specification or a ready-for-agent label is not that command.

@@ -75,7 +75,12 @@ the application has not been implemented.
 
 ## Next steps
 
-Write and agree on the implementation specification. Use the technical prototype
-described above to resolve process-lifecycle uncertainty before implementing that
-part of the panel. Preserve the validated product scope and revisit decisions
-explicitly if new evidence requires changes.
+The specification is [GitHub issue #1](https://github.com/Contempl/WorkWithAgents/issues/1).
+Its acceptance scenario, first-version exclusions, and system-level testing
+boundary were approved by the user. Human-readable specifications, issues, PRs,
+and reports follow the language rule in the root AGENTS.md.
+
+Agree on a vertical-slice ticket breakdown before publishing child issues. Use
+the technical prototype described above to resolve process-lifecycle uncertainty
+before implementing that part of the panel. Follow the implementation handoff
+rule in the case AGENTS.md.

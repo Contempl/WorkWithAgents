@@ -5,7 +5,13 @@ settings, and development workflow rules. `cases/` holds independent cases; keep
 each case's code, documentation, glossary, and decisions in its own folder.
 
 For the current case, follow the [Process Panel instructions](cases/process-panel/AGENTS.md).
-Write agent-facing documentation in English.
+
+## Writing language
+
+Write specifications, issue descriptions, pull requests, and user-facing reports
+in Russian. Write agent instructions, skills, glossaries, ADRs, and other
+agent-facing documentation in English. Preserve canonical glossary terms when
+referring to domain concepts in either language.
 
 ## Agent skills
 
