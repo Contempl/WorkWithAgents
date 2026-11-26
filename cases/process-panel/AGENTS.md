@@ -14,9 +14,10 @@ Windows process-tree termination, including an abnormal panel exit.
 
 ## Startup contract
 
-The first implementation slice is issue #2: session-only registrations, start,
-output, and stop. Persistence and the remaining lifecycle scenarios belong to
-issues #3 and #4. Read [README.md](README.md) for setup and verification.
+Implemented slices: issue #2 (start, output, stop) and issue #3 (persistent
+registrations, editing, removal, independent Projects). Remaining full lifecycle
+scenarios belong to issue #4. Read [README.md](README.md) for setup, data location,
+and verification.
 
 From `cases/process-panel/`, after the implementation's initial dependency setup:
 
@@ -51,3 +52,16 @@ and an unrelated HTTP server remaining alive. Read its RESULT.md before changing
 the process-launch mechanism. Windows 10 or newer is required for creation-time
 job assignment. Browser acceptance tests use the installed Edge browser and real
 owned processes; they must never stop a process found by port.
+
+## Registration storage
+
+Only registration identity, name, folder, and command are persisted. Process
+state and output belong to one Panel session. On load, every Project is stopped.
+An unreadable or malformed store must fail startup rather than become an empty
+list. Save a complete temporary file before replacing the old file; acknowledge
+and change the in-memory list only after saving succeeds.
+
+Browser tests use a test-only controller that creates a separate hidden console
+for its owned Panel. It sends Ctrl+C for a normal shutdown or kills that exact
+child for a crash. Test stores are isolated through PROCESS_PANEL_DATA_DIR under
+test-results; tests must not touch the user's default store.

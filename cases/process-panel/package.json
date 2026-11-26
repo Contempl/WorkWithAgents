@@ -6,7 +6,8 @@
     "start": "node scripts/start.mjs",
     "build": "tsc --noEmit && vite build && go build -buildvcs=false -o bin/panel.exe ./cmd/panel",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build && playwright test"
+    "test:prepare": "go build -buildvcs=false -o bin/panel-test-controller.exe ./tests/console-controller",
+    "test": "npm run build && npm run test:prepare && playwright test"
   },
   "dependencies": {
     "react": "^19.3.1",

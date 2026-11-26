@@ -2,9 +2,8 @@ import { test, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rename, rmdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 let panel;
 let panelOutput;
@@ -33,19 +32,33 @@ async function add(page, { name = 'Учебный сайт', folder = example, c
   const project = page.getByRole('article', { name, exact: true }); await expect(project).toBeVisible(); return project;
 }
 
-test.beforeEach(async ({ page }) => {
-  scratch = await mkdtemp(join(tmpdir(), 'panel проверка '));
+async function startPanel() {
   panelOutput = '';
-  panel = spawn(resolve('bin/panel.exe'), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  panel = spawn(resolve('bin/panel-test-controller.exe'), [resolve('bin/panel.exe')], {
+    stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    env: { ...process.env, PROCESS_PANEL_DATA_DIR: join(scratch, 'data') }
+  });
   panel.stdout.on('data', data => { panelOutput += data; }); panel.stderr.on('data', data => { panelOutput += data; });
   await expect.poll(() => {
     if (panel.exitCode !== null) throw new Error(`Panel не запущена: ${panelOutput}`);
     return panelOutput.includes('http://127.0.0.1:4000');
   }).toBe(true);
+}
+async function stopPanel(mode = 'crash') {
+  if (panel && panel.exitCode === null && panel.signalCode === null) {
+    const exited = once(panel, 'exit'); panel.stdin.end(`${mode}\n`);
+    const [code] = await exited;
+    if (mode === 'stop') expect(code, panelOutput).toBe(0);
+  }
+}
+test.beforeEach(async ({ page }) => {
+  await mkdir(resolve('test-results/fixtures'), { recursive: true });
+  scratch = await mkdtemp(resolve('test-results/fixtures/panel проверка '));
+  await startPanel();
   await page.goto('/');
 });
 test.afterEach(async () => {
-  await terminateOwned(panel);
+  await stopPanel();
   if (scratch) await rm(scratch, { recursive: true, force: true });
 });
 
@@ -97,7 +110,7 @@ test('одновременные запросы запуска создают о
   expect(results.filter(response => response.status() === 409)).toHaveLength(7);
   await expect(project.getByLabel('Вывод программы')).toContainText('сервер готов');
   const pids = [...(await project.getByLabel('Вывод программы').innerText()).matchAll(/PID=(\d+)/g)].map(match => Number(match[1]));
-  await terminateOwned(panel);
+  await stopPanel();
   await expect.poll(() => responds(port)).toBe(false);
   for (const pid of pids) await expect.poll(() => alive(pid)).toBe(false);
 });
@@ -149,4 +162,131 @@ test('занятый порт Panel не затрагивает запущенн
   expect((await request.get('/')).status()).toBe(200);
   const denied = await request.post('/api/projects', { headers: { Origin: 'https://unrelated.example' }, data: { name: 'чужой', folder: example, command: 'echo bad' } });
   expect(denied.status()).toBe(403);expect(await (await request.get('/api/projects')).json()).toEqual([]);
+});
+
+test('регистрации можно менять и удалять; штатный перезапуск сохраняет настройки без вывода и автозапуска', async ({ page }) => {
+  const port = await unusedPort();
+  const project = await add(page, { cmd: command(await unusedPort()) });
+  const script = await readFile(join(example, 'server.mjs'), 'utf8');
+  await writeFile(join(scratch, 'server.mjs'), script);
+  await project.getByRole('button', { name: 'Редактировать', exact: true }).click();
+  await project.getByLabel('Название', { exact: true }).fill('Изменённый сайт');
+  await project.getByLabel('Папка', { exact: true }).fill(scratch);
+  await project.getByLabel('Команда запуска', { exact: true }).fill(command(port));
+  await project.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  const edited = page.getByRole('article', { name: 'Изменённый сайт', exact: true });
+  await expect(edited).toContainText(scratch);
+  await expect(edited).toContainText(command(port));
+  await edited.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await expect(edited.getByLabel('Вывод программы')).toContainText('сервер готов');
+  await expect(edited.getByLabel('Вывод программы')).toContainText(`папка=${scratch}`);
+  const pids = [...(await edited.getByLabel('Вывод программы').innerText()).matchAll(/PID=(\d+)/g)].map(m => Number(m[1]));
+  await stopPanel('stop');
+  await expect.poll(() => responds(port)).toBe(false);
+  for (const pid of pids) await expect.poll(() => alive(pid)).toBe(false);
+  await startPanel(); await page.reload();
+  await expect(edited.getByRole('status')).toHaveText('Остановлен');
+  await expect(edited).toContainText(scratch);
+  await expect(edited).toContainText(command(port));
+  await expect(edited.getByLabel('Вывод программы')).toHaveText('Вывод появится после запуска.');
+  expect(await responds(port)).toBe(false);
+  await edited.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await expect(edited.getByLabel('Вывод программы')).toContainText('сервер готов');
+  await edited.getByRole('button', { name: 'Остановить', exact: true }).click();
+  await expect(edited.getByRole('status')).toHaveText('Остановлен');
+  page.once('dialog', dialog => dialog.accept());
+  await edited.getByRole('button', { name: 'Удалить', exact: true }).click();
+  await expect(edited).toHaveCount(0);
+  expect(await readFile(join(scratch, 'server.mjs'), 'utf8')).toBe(script);
+  await stopPanel('stop'); await startPanel(); await page.reload();
+  await expect(page.getByRole('article')).toHaveCount(0);
+  expect(await readFile(join(scratch, 'server.mjs'), 'utf8')).toBe(script);
+});
+
+test('два Project работают независимо; интерфейс и API запрещают менять активные регистрации', async ({ page, request }) => {
+  const portA = await unusedPort(), portB = await unusedPort();
+  const a = await add(page, { name: 'Сайт А', cmd: command(portA) });
+  const b = await add(page, { name: 'Сайт Б', cmd: command(portB) });
+  await a.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await b.getByRole('button', { name: 'Запустить', exact: true }).click();
+  for (const project of [a, b]) {
+    await expect(project.getByRole('status')).toHaveText('Работает');
+    await expect(project.getByLabel('Вывод программы')).toContainText('сервер готов');
+    await expect(project.getByRole('button', { name: 'Редактировать', exact: true })).toBeDisabled();
+    await expect(project.getByRole('button', { name: 'Удалить', exact: true })).toBeDisabled();
+  }
+  expect(await responds(portA)).toBe(true); expect(await responds(portB)).toBe(true);
+  await expect(a.getByLabel('Вывод программы')).toContainText(`:${portA}`);
+  await expect(a.getByLabel('Вывод программы')).not.toContainText(`:${portB}`);
+  await expect(b.getByLabel('Вывод программы')).toContainText(`:${portB}`);
+  await expect(b.getByLabel('Вывод программы')).not.toContainText(`:${portA}`);
+  const registrations = await (await request.get('/api/projects')).json();
+  for (const p of registrations) {
+    expect((await request.put(`/api/projects/${p.id}`, { data: { name: 'Изменено', folder: scratch, command: 'echo changed' } })).status()).toBe(409);
+    expect((await request.delete(`/api/projects/${p.id}`, { data: {} })).status()).toBe(409);
+    expect((await request.post(`/api/projects/${p.id}/start`, { data: {} })).status()).toBe(409);
+  }
+  const bOutput = await b.getByLabel('Вывод программы').innerText();
+  const aOutput = await a.getByLabel('Вывод программы').innerText();
+  await a.getByRole('button', { name: 'Остановить', exact: true }).click();
+  await expect(a.getByRole('status')).toHaveText('Остановлен');
+  await expect.poll(() => responds(portA)).toBe(false);
+  expect(await responds(portB)).toBe(true);
+  await expect(b.getByRole('status')).toHaveText('Работает');
+  await expect(b.getByLabel('Вывод программы')).toHaveText(bOutput);
+  await expect(a.getByLabel('Вывод программы')).toHaveText(aOutput);
+  await a.getByRole('button', { name: 'Запустить', exact: true }).click();
+  await expect(a.getByLabel('Вывод программы')).toContainText('сервер готов');
+  for (const match of aOutput.matchAll(/PID=(\d+)/g)) await expect(a.getByLabel('Вывод программы')).not.toContainText(`PID=${match[1]}`);
+  expect(await responds(portA)).toBe(true); expect(await responds(portB)).toBe(true);
+  for (const project of [a, b]) {
+    await project.getByRole('button', { name: 'Остановить', exact: true }).click();
+    await expect(project.getByRole('status')).toHaveText('Остановлен');
+  }
+});
+
+test('отказ записи не меняет список и не подтверждает сохранение или удаление', async ({ page }) => {
+  const project = await add(page, { name: 'Сохранённый проект', cmd: 'echo hello' });
+  const path = join(scratch, 'data', 'projects.json');
+  const original = await readFile(path, 'utf8');
+  // Block replacement of this test's own file without relying on administrator ACLs.
+  await rename(path, `${path}.backup`); await mkdir(path);
+  try {
+    await page.getByLabel('Название', { exact: true }).fill('Несохранённый проект');
+    await page.getByLabel('Папка', { exact: true }).fill(example);
+    await page.getByLabel('Команда запуска', { exact: true }).fill('echo lost');
+    await page.getByRole('button', { name: 'Добавить', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Не удалось сохранить проект');
+    await expect(page.getByRole('article')).toHaveCount(1);
+    await project.getByRole('button', { name: 'Редактировать', exact: true }).click();
+    await project.getByLabel('Название', { exact: true }).fill('Несохранённое имя');
+    await project.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Не удалось сохранить изменения');
+    await expect(project.getByRole('heading', { level: 2 })).toHaveText('Сохранённый проект');
+    await project.getByRole('button', { name: 'Отмена', exact: true }).click();
+    page.once('dialog', dialog => dialog.accept());
+    await project.getByRole('button', { name: 'Удалить', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Не удалось удалить регистрацию');
+    await expect(project).toBeVisible();
+  } finally {
+    await rmdir(path); await rename(`${path}.backup`, path);
+  }
+  expect(await readFile(path, 'utf8')).toBe(original);
+  await stopPanel('stop'); await startPanel(); await page.reload();
+  await expect(project).toBeVisible(); await expect(page.getByRole('article')).toHaveCount(1);
+});
+
+test('повреждённое хранилище останавливает запуск, сохраняя исходный файл', async () => {
+  await stopPanel('stop');
+  await mkdir(join(scratch, 'data'), { recursive: true });
+  const path = join(scratch, 'data', 'projects.json');
+  await writeFile(path, '{ повреждённый JSON');
+  const broken = spawn(resolve('bin/panel.exe'), {
+    stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true,
+    env: { ...process.env, PROCESS_PANEL_DATA_DIR: join(scratch, 'data') }
+  });
+  let error = ''; broken.stderr.on('data', data => { error += data; });
+  const [code] = await once(broken, 'exit');
+  expect(code).toBe(1); expect(error).toContain('Не удалось загрузить регистрации проектов');
+  expect(await readFile(path, 'utf8')).toBe('{ повреждённый JSON');
 });

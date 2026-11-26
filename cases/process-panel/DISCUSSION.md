@@ -70,8 +70,8 @@ Open `process-panel.prototype.html` from that branch directly in a browser.
 
 The selected stack and rejected alternatives are recorded in
 [ADR-0002](docs/adr/0002-go-server-and-typescript-interface.md). The agreed startup
-command and address are in [AGENTS.md](AGENTS.md). These are design agreements;
-the application has not been implemented.
+command and address are in [AGENTS.md](AGENTS.md). These were design agreements
+at discovery time; see AGENTS.md for the current implemented slices.
 
 ## Next steps
 
@@ -80,7 +80,8 @@ Its acceptance scenario, first-version exclusions, and system-level testing
 boundary were approved by the user. Human-readable specifications, issues, PRs,
 and reports follow the language rule in the root AGENTS.md.
 
-Agree on a vertical-slice ticket breakdown before publishing child issues. Use
-the technical prototype described above to resolve process-lifecycle uncertainty
-before implementing that part of the panel. Follow the implementation handoff
-rule in the case AGENTS.md.
+The accepted vertical slices are issues #2 (start and stop), #3 (persistent list
+and independent Projects), and #4 (full error and lifecycle behavior). The Windows
+technical probe has been completed; its primary-source branch and observed
+results are recorded in the case AGENTS.md. Follow that document's implementation
+handoff rule for subsequent slices.

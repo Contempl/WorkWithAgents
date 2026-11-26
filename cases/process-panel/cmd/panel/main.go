@@ -30,7 +30,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Не удалось запустить панель на 127.0.0.1:4000:", err)
 		os.Exit(1)
 	}
-	registry := panel.New()
+	dataDir := os.Getenv("PROCESS_PANEL_DATA_DIR")
+	if dataDir == "" {
+		dataDir = filepath.Join(filepath.Dir(executable), "..", "data")
+	}
+	registry, err := panel.Open(filepath.Join(dataDir, "projects.json"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Не удалось загрузить регистрации проектов:", err)
+		listener.Close()
+		os.Exit(1)
+	}
 	server := &http.Server{Handler: registry.Handler(assets), ReadHeaderTimeout: 5 * time.Second}
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
