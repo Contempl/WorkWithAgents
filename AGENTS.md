@@ -36,5 +36,7 @@ referring to domain concepts in either language.
   documents, including project copies of skills.
 - Issues: before creating, updating, or reading tickets, follow
   [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md).
+- Triage: before classifying Issues or changing readiness labels, follow
+  [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
 - Domain docs: before exploring a case or recording terms and decisions, follow
   [docs/agents/domain.md](docs/agents/domain.md).
