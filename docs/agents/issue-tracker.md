@@ -3,6 +3,9 @@
 Track tasks and specifications in GitHub Issues for `Contempl/WorkWithAgents`.
 Use GitHub CLI (`gh`) from this repository.
 
+Before assigning or interpreting task readiness and triage states, read
+[triage-labels.md](triage-labels.md).
+
 ## Delivery
 
 Implementation closes Issues through approved PRs merged into `main`. Before
